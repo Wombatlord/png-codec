@@ -1,1 +1,5 @@
 .python-version
+__pycache__/
+venv/
+pytest.ini
+/test_images

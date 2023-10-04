@@ -1,0 +1,5 @@
+ptpython
+pytest
+pillow
+numpy
+matplotlib
