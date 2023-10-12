@@ -101,7 +101,7 @@ def test_filter_next_square():
     filter_data = bytearray([filter_byte])
     
     # Act
-    square = Square.filter_next_square(source_data, filter_data, stride)
+    square = Square.next_filter_square(source_data, filter_data, stride)
     filter_output = Filters.select_filter_func(filter_byte)(square)
     
     # Assert
@@ -116,7 +116,7 @@ def test_filter_next_next_square():
     filter_data = bytearray([filter_byte, source_data[0]])
     
     # Act
-    square = Square.filter_next_square(source_data, filter_data, stride)
+    square = Square.next_filter_square(source_data, filter_data, stride)
     filter_output = Filters.select_filter_func(filter_byte)(square)
     
     # Assert
@@ -131,7 +131,7 @@ def test_filter_next_next_next_square():
     filter_data = bytearray([filter_byte, source_data[0], (source_data[1] - source_data[0]) & 0xFF])
     
     # Act
-    square = Square.filter_next_square(source_data, filter_data, stride)
+    square = Square.next_filter_square(source_data, filter_data, stride)
     filter_output = Filters.select_filter_func(filter_byte)(square)
     
     # Assert

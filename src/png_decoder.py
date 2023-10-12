@@ -5,7 +5,8 @@ import struct
 from typing import NamedTuple, Self
 import zlib
 from itertools import count
-
+from src.filters import Filters
+from src.square import Square
 
 
 class IHDR(NamedTuple):
@@ -68,177 +69,6 @@ class Chunk:
 # https://pyokagan.name/blog/2019-10-14-png/
 # https://www.w3.org/TR/png-3/#5Chunk-layout
 
-
-class Square(NamedTuple):
-    x: int
-    a: int
-    b: int
-    c: int
-    
-    @classmethod
-    def sample_x(cls, filt_x: int, x_idx: int, current_scanline: bytearray, previous_scanline: bytearray) -> Self:
-        return cls(
-            x=filt_x,
-            a=current_scanline[x_idx],
-            b=previous_scanline[x_idx+1],
-            c=previous_scanline[x_idx],
-        )
-        
-    @classmethod
-    def recon_next_square(cls, filter_data: bytearray, recon_data: bytearray, stride: int, bytes_per_pixel: int) -> Self | None:
-        scan_offset = len(recon_data) % stride
-        line_offset = len(recon_data) // stride
-        
-        scan_incr = bytes_per_pixel
-        line_incr = 1
-        
-        x_offsets = (scan_offset, line_offset)
-        a_offsets = (scan_offset - scan_incr, line_offset)
-        b_offsets = (scan_offset, line_offset - line_incr)
-        c_offsets = (scan_offset - scan_incr, line_offset - line_incr)
-        
-        filter_stride = stride + 1
-        
-        #                       go down by line offset scans          skip filter byte
-        #                                             |----------|    v
-        filter_byte_index = lambda scan, line: line * filter_stride + 1 + scan
-        recon_byte_index = lambda scan, line: line * stride + scan
-        
-        if filter_byte_index(*x_offsets) >= len(filter_data):
-            return None
-        
-        x = filter_data[filter_byte_index(*x_offsets)]
-        
-        a = 0
-        rec_idx_a = recon_byte_index(*a_offsets)
-        if a_offsets[0] >= 0:
-            a = recon_data[rec_idx_a]
-        
-        b = 0
-        rec_idx_b = recon_byte_index(*b_offsets)
-        if b_offsets[1] >= 0:
-            b = recon_data[rec_idx_b]
-        
-        c = 0
-        rec_idx_c = recon_byte_index(*c_offsets)
-        if c_offsets[0] >= 0 and c_offsets[1] >= 0:
-            c = recon_data[rec_idx_c]
-            
-        return cls(x, a, b, c)
-    
-    @classmethod
-    def filter_next_square(cls, source_data: bytearray, filtered_data: bytearray, stride: int) -> Self | None:
-        filter_stride = stride + 1
-        filter_byte_index = lambda scan, line: line * filter_stride + 1 + scan
-        source_byte_index = lambda scan, line: line * stride + scan
-        
-        scan_offset = max((len(filtered_data) % filter_stride) - 1, 0)
-        line_offset = len(filtered_data) // filter_stride
-        
-        x_offsets = (scan_offset, line_offset)
-        a_offsets = (scan_offset - 1, line_offset)
-        b_offsets = (scan_offset, line_offset - 1)
-        c_offsets = (scan_offset - 1, line_offset - 1)
-
-        if source_byte_index(*x_offsets) >= len(source_data):
-            return None
-        
-        x = source_data[source_byte_index(*x_offsets)]
-        
-        a = 0
-        if a_offsets[0] >= 0:
-            a = source_data[source_byte_index(*a_offsets)]
-        
-        b = 0
-        if b_offsets[1] >= 0:
-            b = source_data[source_byte_index(*b_offsets)]
-        
-        c = 0
-        if c_offsets[0] >= 0 and c_offsets[1] >= 0:
-            c = source_data[source_byte_index(*c_offsets)]
-            
-        return cls(x, a, b, c)
-        
-class Filters:
-    def __init__(self, width: int) -> None:
-        self.bytes_per_pixel = 4
-        self.stride = width * self.bytes_per_pixel
-
-    @staticmethod
-    def none_filter(square: Square) -> int:
-        return square.x
-
-    @staticmethod
-    def none_recon(square: Square) -> int:
-        return square.x
-    
-    @staticmethod
-    def sub_filter(square: Square) -> int:
-        return square.x - square.a
-
-    @staticmethod
-    def sub_recon(square: Square) -> int:
-        return square.x + square.a
-    
-    @staticmethod
-    def up_filter(square: Square) -> int:
-        return square.x - square.b
-
-    @staticmethod
-    def up_recon(square: Square) -> int:
-        return square.x + square.b
-    
-    @staticmethod
-    def average_filter(square: Square) -> int:
-        return square.x - (square.a + square.b) // 2
-    
-    @staticmethod
-    def average_recon(square: Square) -> int:
-        return square.x + (square.a + square.b) // 2
-
-    @staticmethod
-    def paeth_filter(square: Square) -> int:
-        return square.x - Filters.paeth_predictor(square.a, square.b, square.c)
-    
-    @staticmethod
-    def paeth_recon(square: Square) -> int:
-        return square.x + Filters.paeth_predictor(square.a, square.b, square.c)
-    
-    @staticmethod
-    def paeth_predictor(a, b, c):
-        p = a + b - c
-        pa = abs(p - a)
-        pb = abs(p - b)
-        pc = abs(p - c)
-        if pa <= pb and pa <= pc:
-            Pr = a
-        elif pb <= pc:
-            Pr = b
-        else:
-            Pr = c
-        return Pr
-
-    @staticmethod
-    def select_filter_func(filter_byte):
-        return [
-            Filters.none_filter,
-            Filters.sub_filter,
-            Filters.up_filter,
-            Filters.average_filter,
-            Filters.paeth_filter,
-        ][filter_byte]
-
-    @staticmethod
-    def select_reconstruction_func(filter_byte):
-        return [
-            Filters.none_recon,
-            Filters.sub_recon,
-            Filters.up_recon,
-            Filters.average_recon,
-            Filters.paeth_recon,
-        ][filter_byte]
-
-
 class Reconstructor:
     def __init__(self, width, height) -> None:
         self.bytes_per_pixel = 4
@@ -287,7 +117,7 @@ class Reconstructor:
         filter_byte_gen = (filter_bytes[i % len(filter_bytes)] for i in count())
         filter_byte = next(filter_byte_gen)
         filter_data = bytearray([filter_byte])
-        while square := Square.filter_next_square(source_data, filter_data, stride):
+        while square := Square.next_filter_square(source_data, filter_data, stride, 4):
             filter_func = Filters.select_filter_func(filter_byte)
             filter_data.append(filter_func(square) & 0xFF)
             if (len(filter_data) % (stride + 1)) == 0:
@@ -299,7 +129,7 @@ class Reconstructor:
     @staticmethod
     def reconstruct(filter_data: bytearray, stride: int, bytes_per_pixel) -> bytearray:
         recon_data = bytearray()
-        while square := Square.recon_next_square(filter_data, recon_data, stride, bytes_per_pixel):
+        while square := Square.next_recon_square(filter_data, recon_data, stride, bytes_per_pixel):
             if (len(recon_data) % stride) == 0:
                 filter_byte_index = (len(recon_data) // stride) * (stride + 1)
                 filter_byte = filter_data[filter_byte_index]
@@ -504,43 +334,3 @@ class PNGDecoder:
 
     def reconstruct_from_inflated_data(self, buf):
         return self.png_reconstructor.reconstruct_buf(buf)
-    
-    
-    #######################
-    def example_recon(self, filtered):
-        Recon = []
-        bytesPerPixel = 4
-        stride = self.ihdr.dimensions[0] * bytesPerPixel
-
-        def Recon_a(r, c):
-            # Height_idx * stride + Scanline_idx - 4
-            return Recon[r * stride + c - bytesPerPixel] if c >= bytesPerPixel else 0
-
-        def Recon_b(r, c):
-            return Recon[(r-1) * stride + c] if r > 0 else 0
-
-        def Recon_c(r, c):
-            return Recon[(r-1) * stride + c - bytesPerPixel] if r > 0 and c >= bytesPerPixel else 0
-
-        i = 0
-        for r in range(self.ihdr.dimensions[1]): # for each scanline
-            filter_type = filtered[i] # first byte of scanline is filter type
-            i += 1
-            for c in range(stride): # for each byte in scanline
-                Filt_x = filtered[i]
-                i += 1
-                if filter_type == 0: # None
-                    Recon_x = Filt_x
-                elif filter_type == 1: # Sub
-                    Recon_x = Filt_x + Recon_a(r, c)
-                elif filter_type == 2: # Up
-                    Recon_x = Filt_x + Recon_b(r, c)
-                elif filter_type == 3: # Average
-                    Recon_x = Filt_x + (Recon_a(r, c) + Recon_b(r, c)) // 2
-                elif filter_type == 4: # Paeth
-                    Recon_x = Filt_x + Filters.paeth_predictor(Recon_a(r, c), Recon_b(r, c), Recon_c(r, c))
-                else:
-                    raise Exception('unknown filter type: ' + str(filter_type))
-                Recon.append(Recon_x & 0xff) # truncation to byte
-        
-        return Recon
