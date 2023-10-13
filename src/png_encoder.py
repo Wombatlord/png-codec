@@ -1,5 +1,8 @@
 from typing import Callable, Generator
+import zlib
+from src.chunks import IHDR, Chunk, IHDRData
 from src.filters import Filters
+from src.png_decoder import Transformer
 from src.square import Square
 
 class I8(int):
@@ -51,6 +54,71 @@ class PNGEncoder:
         self.height = wh[1]
         self.stride = self.width * 4 # stride is width in terms of bytes per pixel
 
+    def source_to_byte_array(self):
+        arr = bytearray()
+        for t in self.raw_source:
+            arr.extend(t)
+        
+        return arr
+    
+    def prepare_ihdr(self):
+        bit_depth = 8
+        colour_type = 6
+        compression_method = 0
+        filter_method = 0
+        interlace_method = 0
+        ihdr_data = IHDRData(
+                self.width,
+                self.height,
+                bit_depth,
+                colour_type,
+                compression_method,
+                filter_method,
+                interlace_method,
+            )
+        
+        return IHDR(
+                length=13,
+                chunk_type=b'IHDR',
+                chunk_data=ihdr_data,
+            )
+    
+    def apply_filtering(self):
+        source_bytes = self.source_to_byte_array()
+        filter_bytes = self.best_filters()
+        filtered_data = Transformer.filter(source_bytes, filter_bytes, self.stride, 4)
+        return filtered_data
+
+    def compress_to_idat_chunks(self, filtered_data):
+        arr = bytearray()
+        arr.extend(zlib.compress(filtered_data))
+            
+        max_size = 30
+        
+        chunks = []
+        for i in range(0, len(arr), max_size):
+            if len(arr) > max_size:
+                chunks.append(Chunk(length=max_size, chunk_type=b'IDAT', chunk_data=arr[i:i+max_size], crc=Chunk.calc_crc(arr[i:i+max_size], b'IDAT')))
+            else:
+                chunks.append(Chunk(length=len(arr[i:-1]), chunk_type=b'IDAT', chunk_data=arr[i:-1], crc=Chunk.calc_crc(arr[i:-1], b'IDAT')))                
+                break
+        
+        return chunks
+    
+    def iend_chunk(self):
+        return Chunk(length=0, chunk_type=b'IEND', chunk_data=b'', crc=Chunk.calc_crc(b'', b'IEND'))
+    
+    def final_datastream(self, filtered_data):
+        chunks = [self.prepare_ihdr()]
+        chunks.append(self.compress_to_idat_chunks(filtered_data))
+        chunks.append(self.iend_chunk())
+
+        d = b''
+        for chunk in chunks:
+            d += bytes(chunk)
+        
+        return d
+        
     def best_filters(self):
         scores = self.filter_scores()
         filter_bytes = []
@@ -87,7 +155,6 @@ class PNGEncoder:
                 if i % (filter_stride) == 0:
                     continue
                 score += abs(I8(b))
-                print(f"{b=}")
             
             line_scores.append(score)
         

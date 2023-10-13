@@ -2,74 +2,17 @@ from __future__ import annotations
 from io import BytesIO
 from pathlib import Path
 import struct
-from typing import NamedTuple, Self
 import zlib
 from itertools import count
 from src.filters import Filters
 from src.square import Square
-
-
-class IHDR(NamedTuple):
-    length: int
-    chunk_type: bytes
-    chunk_data: bytes
-
-    @property
-    def ihdr_data(self) -> IHDRData:
-        return IHDRData.from_bytes(self.chunk_data)
-    
-    @property
-    def dimensions(self) -> tuple[int, int]:
-        return self.ihdr_data.dimensions
-
-
-class IHDRData(NamedTuple):
-    width: int
-    height: int
-    bit_depth: int
-    colour_type: int
-    compression_method: int
-    filter_method: int
-    interlace_method: int
-
-    def __bytes__(self) -> bytes:
-        return struct.pack(">IIBBBBB", *self)
-
-    @classmethod
-    def from_bytes(cls, data: bytes):
-        return cls(*struct.unpack(">IIBBBBB", data))
-    
-    @property
-    def dimensions(self) -> tuple[int, int]:
-        return self.width, self.height
-
-
-class Chunk:
-    length: int
-    chunk_type: str
-    chunk_data: bytes
-    crc:int
-    def __init__(self, length: int, chunk_type: str, chunk_data: bytes, crc: int) -> None:
-        self.length = length
-        self.chunk_type = chunk_type
-        self.chunk_data = chunk_data
-        self.crc = crc
-
-    def combine_chunks(self, chunk_b: Self):
-        self.chunk_data = b''.join([self.chunk_data, chunk_b.chunk_data])
-        self.length += chunk_b.length
-        self.crc = zlib.crc32(
-            self.chunk_data, zlib.crc32(struct.pack(">4s", self.chunk_type))
-        )
-
-    def __add__(self, other):
-        self.combine_chunks(other)
+from src.chunks import IHDR, Chunk
 
 
 # https://pyokagan.name/blog/2019-10-14-png/
 # https://www.w3.org/TR/png-3/#5Chunk-layout
 
-class Reconstructor:
+class Transformer:
     def __init__(self, width, height) -> None:
         self.bytes_per_pixel = 4
         self.height = height
@@ -87,12 +30,7 @@ class Reconstructor:
             # Loop over pixels in a scanline
             recon_line = bytearray(b"\x00")
             for i, int_byte in enumerate(filt_scan):
-                # line_idx = i + 1
                 filt_x = int_byte
-                # recon_a = recon_line[line_idx - 1]
-                # recon_b = prev_recon_line[line_idx]
-                # recon_c = prev_recon_line[line_idx - 1]
-                # square = Square(filt_x, recon_a, recon_b, recon_c)
                 square = Square.sample_x(filt_x, i, recon_line, prev_recon_line)
                 
                 if filter_byte not in range(len(self.reconstruction_funcs)):
@@ -113,11 +51,11 @@ class Reconstructor:
         return reconstructed
     
     @staticmethod
-    def filter(source_data: bytearray, filter_bytes: list[int], stride: int) -> bytearray:
+    def filter(source_data: bytearray, filter_bytes: list[int], stride: int, bytes_per_pixel) -> bytearray:
         filter_byte_gen = (filter_bytes[i % len(filter_bytes)] for i in count())
         filter_byte = next(filter_byte_gen)
         filter_data = bytearray([filter_byte])
-        while square := Square.next_filter_square(source_data, filter_data, stride, 4):
+        while square := Square.next_filter_square(source_data, filter_data, stride, bytes_per_pixel):
             filter_func = Filters.select_filter_func(filter_byte)
             filter_data.append(filter_func(square) & 0xFF)
             if (len(filter_data) % (stride + 1)) == 0:
@@ -154,7 +92,7 @@ class PNGDecoder:
         self._validate_IHDR()
         self.idat_chunk_idx: int | None = None
         self.chunks = self._chunker()
-        self.png_reconstructor = Reconstructor(
+        self.png_reconstructor = Transformer(
             self.ihdr.ihdr_data.width, self.ihdr.ihdr_data.height
         )
         self.idat = self.chunks[2]

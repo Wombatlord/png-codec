@@ -1,5 +1,6 @@
 #!/usr/bin/env python
-from src.png_decoder import PNGDecoder, Reconstructor
+from src.png_decoder import PNGDecoder, Transformer
+from src.png_encoder import PNGEncoder
 from src.printer import Printer
 from io import BytesIO
 from PIL import Image
@@ -13,21 +14,26 @@ def show_pub_locals(locals_):
             print(f"{name} = {svar}")
 
 buf = BytesIO()
-png = PNGDecoder("tile_normals.png")
-PNGDecoder.inflate_IDAT_data(buf, png.idat_chunk)
+decoder = PNGDecoder("test_images/tile_normals.png")
+PNGDecoder.inflate_IDAT_data(buf, decoder.idat_chunk)
+
+
 
 filtered = buf.read()
 buf.seek(0)
-recon = Reconstructor.reconstruct(bytearray(buf.read()), png.ihdr.dimensions[0] * 4, png.png_reconstructor.bytes_per_pixel)
+recon = Transformer.reconstruct(bytearray(buf.read()), decoder.ihdr.dimensions[0] * 4, decoder.png_reconstructor.bytes_per_pixel)
 
-# example_recon = png.example_recon(bytearray(filtered))
+rgbas = []
+for i in range(0, len(recon), 4):
+    rgba = recon[i:i+4]
+    rgba=tuple(rgba)
+    rgbas.append(rgba)
 
-index = png.png_reconstructor.filter_bytes_index
+encoder = PNGEncoder(wh=decoder.ihdr.dimensions, raw_source=rgbas)
+
+
+
+index = decoder.png_reconstructor.filter_bytes_index
 p = Printer()
 
 show_pub_locals(locals())
-
-import numpy as np
-import matplotlib.pyplot as plt
-# plt.imshow(np.array(example_recon).reshape((png.ihdr.dimensions[1], png.ihdr.dimensions[0], 4)))
-# plt.show()

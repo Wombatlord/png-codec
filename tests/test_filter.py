@@ -1,4 +1,4 @@
-from src.png_decoder import Filters, Square, Reconstructor
+from src.png_decoder import Filters, Square, Transformer
 from ptpython import embed
 import pytest
 
@@ -14,9 +14,9 @@ def image_fixture() -> bytearray:
 def test_none_filter():
     filter_byte = 0
     stride = 12
+    bytes_per_pixel = 4
     source_data = image_fixture()
-  
-    filter_data = Reconstructor.filter(source_data, [filter_byte], stride)
+    filter_data = Transformer.filter(source_data, [filter_byte], stride, bytes_per_pixel)
   
     filter_byte_arr = bytearray([filter_byte])
     expected_filter_data = filter_byte_arr + source_data[:stride]
@@ -46,10 +46,10 @@ def test_recon_is_filter_inverse(filter_byte):
     # Arrange
     stride = 12
     source_data = image_fixture()
-  
+    bytes_per_pixel = 4
     # Act
-    filter_data = Reconstructor.filter(source_data, [filter_byte], stride)
-    recon_data = Reconstructor.reconstruct(filter_data, stride)
+    filter_data = Transformer.filter(source_data, [filter_byte], stride, bytes_per_pixel)
+    recon_data = Transformer.reconstruct(filter_data, stride, 4)
 
     # Assert
     diff = [
@@ -72,11 +72,12 @@ def test_recon_is_filter_inverse(filter_byte):
 def test_recon_is_filter_inverse_varying_filters(filter_byte_pattern):
     # Arrange
     stride = 12
+    bytes_per_pixel = 4
     source_data = image_fixture()
   
     # Act
-    filter_data = Reconstructor.filter(source_data, filter_byte_pattern, stride)
-    recon_data = Reconstructor.reconstruct(filter_data, stride)
+    filter_data = Transformer.filter(source_data, filter_byte_pattern, stride, bytes_per_pixel)
+    recon_data = Transformer.reconstruct(filter_data, stride, 4)
 
     # Assert
     diff = [
@@ -99,9 +100,9 @@ def test_filter_next_square():
     filter_byte = 1
     source_data = image_fixture()
     filter_data = bytearray([filter_byte])
-    
+    bytes_per_pixel = 4
     # Act
-    square = Square.next_filter_square(source_data, filter_data, stride)
+    square = Square.next_filter_square(source_data, filter_data, stride, bytes_per_pixel)
     filter_output = Filters.select_filter_func(filter_byte)(square)
     
     # Assert
@@ -114,9 +115,9 @@ def test_filter_next_next_square():
     filter_byte = 1
     source_data = image_fixture()
     filter_data = bytearray([filter_byte, source_data[0]])
-    
+    bytes_per_pixel = 4
     # Act
-    square = Square.next_filter_square(source_data, filter_data, stride)
+    square = Square.next_filter_square(source_data, filter_data, stride, bytes_per_pixel)
     filter_output = Filters.select_filter_func(filter_byte)(square)
     
     # Assert
@@ -129,9 +130,9 @@ def test_filter_next_next_next_square():
     filter_byte = 1
     source_data = image_fixture()
     filter_data = bytearray([filter_byte, source_data[0], (source_data[1] - source_data[0]) & 0xFF])
-    
+    bytes_per_pixel = 4
     # Act
-    square = Square.next_filter_square(source_data, filter_data, stride)
+    square = Square.next_filter_square(source_data, filter_data, stride, bytes_per_pixel)
     filter_output = Filters.select_filter_func(filter_byte)(square)
     
     # Assert
