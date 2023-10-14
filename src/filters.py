@@ -1,5 +1,12 @@
 from src.square import Square
 
+class I8(int):
+    def __new__(cls, val):
+        i = int.__new__(cls, val) & 0xFF
+        if i > 127:
+            i = (i & 0b01111111) - 128
+        return i
+
 class Filters:
     def __init__(self, width: int) -> None:
         self.bytes_per_pixel = 4
@@ -78,3 +85,20 @@ class Filters:
             Filters.average_recon,
             Filters.paeth_recon,
         ][filter_byte]
+    
+        
+    @staticmethod
+    def minumum_sum_of_absolute_differences(filtered_data, stride) -> list[int]:
+        line_scores = []
+        filter_stride = stride + 1
+        
+        for line in range(0, len(filtered_data), filter_stride):
+            score = 0
+            for i, b in enumerate(filtered_data[line:line+filter_stride]):
+                if i % (filter_stride) == 0:
+                    continue
+                score += abs(I8(b))
+            
+            line_scores.append(score)
+        
+        return line_scores

@@ -51,7 +51,7 @@ class Chunk:
         self.crc = crc
 
     def __bytes__(self) -> bytes:
-        l = struct.pack(">i", self.length)
+        l = struct.pack(">I", self.length)
         ct = struct.pack(">4s", self.chunk_type)
         crc = struct.pack(">I", self.crc)
         b = l + ct + self.chunk_data + crc
