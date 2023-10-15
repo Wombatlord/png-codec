@@ -1,11 +1,23 @@
 from src.square import Square
 
 class I8(int):
+    U_MAX = 2**8-1
+    I_MAX = 2**7
     def __new__(cls, val):
         i = int.__new__(cls, val) & 0xFF
         if i > 127:
             i = (i & 0b01111111) - 128
         return i
+
+class I16(int):
+    U_MAX = 2**16-1
+    I_MAX = 2**15
+    def __new__(cls, val):
+        i = int.__new__(cls, val) & 0xFFFF
+        if i > cls.I_MAX-1:
+            i = (i & 0b0111111111111111) - cls.I_MAX
+        return i
+
 
 class Filters:
     def __init__(self, width: int) -> None:
@@ -95,7 +107,8 @@ class Filters:
         for line in range(0, len(filtered_data), filter_stride):
             score = 0
             for i, b in enumerate(filtered_data[line:line+filter_stride]):
-                if i % (filter_stride) == 0:
+                is_filter_byte = i % (filter_stride) == 0
+                if is_filter_byte:
                     continue
                 score += abs(I8(b))
             

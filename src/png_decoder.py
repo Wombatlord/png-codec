@@ -1,4 +1,5 @@
 from __future__ import annotations
+from functools import cached_property
 from io import BytesIO
 from pathlib import Path
 import struct
@@ -78,13 +79,25 @@ class Transformer:
 
         return recon_data
 
+class Services:
+    def __init__(self, config) -> None:
+        self.config = config
+    
+    @cached_property
+    def data_buffer(self) -> BytesIO:
+        return BytesIO()
+    
+    @cached_property
+    def png_decoder(self) -> PNGDecoder:
+        return PNGDecoder(self.config["fp"], self.data_buffer)
+
 
 class PNGDecoder:
     chunks: list[Chunk]
     _ihdr: IHDR
     PNG_SIGNATURE = bytes.fromhex("89504E470D0A1A0A")
 
-    def __init__(self, fp: str | Path) -> None:
+    def __init__(self, fp: str | Path, buf=None) -> None:
         self.path = self._parse_fp(fp)
         self.data_buffer = BytesIO()
         self._read_from_file()

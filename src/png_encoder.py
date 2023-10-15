@@ -1,4 +1,4 @@
-from typing import Callable, Generator
+from typing import Generator
 import zlib
 from src.chunks import IHDR, Chunk, IHDRData
 from src.filters import Filters
@@ -47,7 +47,8 @@ class PNGEncoder:
         self.raw_source = [*raw_source]
         self.width = wh[0] # width of the image data in pixels, ie tuples of ints
         self.height = wh[1]
-        self.stride = self.width * 4 # stride is width in terms of bytes per pixel
+        self.bytes_per_pixel = 4
+        self.stride = self.width * self.bytes_per_pixel # stride is width in terms of bytes per pixel
 
     def _source_to_byte_array(self) -> bytearray:
         arr = bytearray()
@@ -63,20 +64,20 @@ class PNGEncoder:
         filter_method = 0
         interlace_method = 0
         ihdr_data = IHDRData(
-                self.width,
-                self.height,
-                bit_depth,
-                colour_type,
-                compression_method,
-                filter_method,
-                interlace_method,
-            )
+            self.width,
+            self.height,
+            bit_depth,
+            colour_type,
+            compression_method,
+            filter_method,
+            interlace_method,
+        )
         
         ihdr = IHDR(
-                length=13,
-                chunk_type=b'IHDR',
-                chunk_data=ihdr_data,
-            )
+            length=13,
+            chunk_type=b'IHDR',
+            chunk_data=ihdr_data,
+        )
         
         chunked = Chunk(ihdr.length, ihdr.chunk_type, bytes(ihdr_data), Chunk.calc_crc(bytes(ihdr_data), b'IHDR'))
         return chunked
@@ -84,7 +85,7 @@ class PNGEncoder:
     def apply_filtering(self) -> bytearray:
         source_bytes = self._source_to_byte_array()
         filter_bytes = self._best_filters()
-        filtered_data = Transformer.filter(source_bytes, filter_bytes, self.stride, 4)
+        filtered_data = Transformer.filter(source_bytes, filter_bytes, self.stride, self.bytes_per_pixel)
         return filtered_data
 
     def _compress_to_idat_chunks(self, filtered_data) -> list[Chunk]:
@@ -96,9 +97,23 @@ class PNGEncoder:
         chunks = []
         for i in range(0, len(arr), max_size):
             if len(arr) > max_size:
-                chunks.append(Chunk(length=max_size, chunk_type=b'IDAT', chunk_data=arr[i:i+max_size], crc=Chunk.calc_crc(arr[i:i+max_size], b'IDAT')))
+                chunks.append(
+                    Chunk(
+                        length=max_size,
+                        chunk_type=b'IDAT',
+                        chunk_data=arr[i:i+max_size],
+                        crc=Chunk.calc_crc(arr[i:i+max_size],b'IDAT')
+                    )
+                )
             else:
-                chunks.append(Chunk(length=len(arr[i:-1]), chunk_type=b'IDAT', chunk_data=arr[i:-1], crc=Chunk.calc_crc(arr[i:-1], b'IDAT')))                
+                chunks.append(
+                    Chunk(
+                        length=len(arr[i:-1]),
+                        chunk_type=b'IDAT',
+                        chunk_data=arr[i:-1],
+                        crc=Chunk.calc_crc(arr[i:-1], b'IDAT')
+                    )
+                )                
                 break
         
         return chunks
@@ -107,9 +122,12 @@ class PNGEncoder:
         return Chunk(length=0, chunk_type=b'IEND', chunk_data=b'', crc=Chunk.calc_crc(b'', b'IEND'))
     
     def final_datastream(self, filtered_data) -> bytes:
-        chunks = [self.prepare_ihdr()]
-        chunks.extend(self._compress_to_idat_chunks(filtered_data))
-        chunks.append(self.iend_chunk())
+        chunks = [
+            self.prepare_ihdr(),
+            *self._compress_to_idat_chunks(filtered_data),
+            self.iend_chunk()
+        ]
+        
         d = b''.join([bytes(chunk) for chunk in chunks])
         d = self.PNG_SIGNATURE + d
         
@@ -130,18 +148,11 @@ class PNGEncoder:
 
     def _filter_scores(self) -> list[tuple[int,int,int,int,int]]:
         return [
-            *zip
-            (
-                self._calculate_filter_score(Filters.none_filter, 0),
-                self._calculate_filter_score(Filters.sub_filter, 1),
-                self._calculate_filter_score(Filters.up_filter, 2),
-                self._calculate_filter_score(Filters.average_filter, 3),
-                self._calculate_filter_score(Filters.paeth_filter, 4),
-            )
+            *zip(self._calculate_filter_score(i) for i in range(5))
         ]
 
-    def _calculate_filter_score(self, filter_func: Callable[[Square], int], filter_byte:int) -> list[int]:
+    def _calculate_filter_score(self, filter_byte:int) -> list[int]:
         b = bytearray()
-        for line in consume_lines(self.width, self.stride, self.raw_source, filter_func, filter_byte):
+        for line in consume_lines(self.width, self.stride, self.raw_source, Filters.select_filter_func(filter_byte), filter_byte):
             b.extend(line)
         return Filters.minumum_sum_of_absolute_differences(b, self.stride)

@@ -14,7 +14,7 @@ def show_pub_locals(locals_):
             print(f"{name} = {svar}")
 
 buf = BytesIO()
-decoder = PNGDecoder("test_images/banner.png")
+decoder = PNGDecoder("test_images/tile_normals.png")
 PNGDecoder.inflate_IDAT_data(buf, decoder.idat_chunk)
 
 
